@@ -1,0 +1,281 @@
+@page "/"
+@using Sharplens.Core
+@using System.Reflection
+
+<header class="bar">
+    <div class="brand">
+        <h1>sharplens</h1>
+        <p>What the compiler and the runtime do underneath your code</p>
+    </div>
+    <span class="badge">Roslyn @(typeof(Microsoft.CodeAnalysis.CSharp.CSharpCompilation).Assembly.GetName().Version?.ToString(3)), running in your browser</span>
+</header>
+
+<nav class="tabs">
+    <button class="tab @Active("async")" @onclick='() => Select("async")'>async / await</button>
+    <button class="tab @Active("linq")" @onclick='() => Select("linq")'>LINQ</button>
+    <button class="tab @Active("alloc")" @onclick='() => Select("alloc")'>allocations</button>
+</nav>
+
+@if (_tab == "async")
+{
+    <section class="scene">
+        <div class="pane">
+            <h2>Your method</h2>
+            <textarea class="code" spellcheck="false" @bind="_source" @bind:event="oninput"></textarea>
+            <div class="actions">
+                <button class="btn primary" @onclick="RunAsyncScene" disabled="@_busy">
+                    @(_busy ? "compiling" : "Compile with Roslyn")
+                </button>
+                <button class="btn" @onclick="ResetSource">Reset</button>
+            </div>
+            <p class="muted">The compiler runs here, in this tab. Nothing is sent anywhere.</p>
+        </div>
+
+        <div class="pane">
+            <h2>What the compiler produced</h2>
+
+            @if (_inspection is null)
+            {
+                <p class="muted">Compile to see the generated state machine.</p>
+            }
+            else if (!_inspection.Success)
+            {
+                <div class="error">
+                    <p>That did not compile:</p>
+                    <ul>
+                        @foreach (var diagnostic in _inspection.Diagnostics)
+                        {
+                            <li>@diagnostic</li>
+                        }
+                    </ul>
+                </div>
+            }
+            else if (_inspection.StateMachineType is null)
+            {
+                <p>No state machine here. A method without <code>await</code> runs straight through, so the compiler emits an ordinary method.</p>
+            }
+            else
+            {
+                <p class="lead">
+                    <code>@_inspection.MethodName</code> was rewritten as <code>@_inspection.StateMachineType</code>,
+                    a @(_inspection.IsStruct ? "struct" : "class") implementing
+                    <code>@string.Join(", ", _inspection.Interfaces)</code>.
+                </p>
+
+                <dl class="facts">
+                    <div><dt>awaits</dt><dd>@_inspection.AwaitCount</dd></div>
+                    <div><dt>generated types</dt><dd>@_inspection.AssemblyTypes.Count</dd></div>
+                </dl>
+
+                <h3>States</h3>
+                <ul class="states">
+                    @foreach (var state in _inspection.States)
+                    {
+                        <li><code>@state</code></li>
+                    }
+                </ul>
+
+                <h3>Fields</h3>
+                <table class="grid">
+                    <thead>
+                        <tr><th>field</th><th>type</th><th>why it exists</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var field in _inspection.Fields)
+                        {
+                            <tr>
+                                <td><code>@field.Name</code></td>
+                                <td><code>@field.Type</code></td>
+                                <td>@field.Note</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+
+                <h3>Methods</h3>
+                <ul class="methods">
+                    @foreach (var method in _inspection.Methods)
+                    {
+                        <li><code>@method.Signature</code></li>
+                    }
+                </ul>
+
+                <h3>Reading it</h3>
+                <p>
+                    Calling the method allocates the machine and calls <code>MoveNext</code>. When execution reaches
+                    an <code>await</code>, <code>MoveNext</code> stores the awaiters, saves the state number, and returns.
+                    The thread is free. When the awaited task completes, it calls <code>MoveNext</code> again, which
+                    jumps back to the saved state and continues after the await.
+                </p>
+                <p>
+                    That is the whole trick: an async method is not a thread, and it is not magic. It is an object
+                    with a state field and a <code>switch</code> that resumes where it stopped. The <code>builder</code>
+                    field is what completes the returned <code>Task</code>.
+                </p>
+            }
+        </div>
+    </section>
+}
+else if (_tab == "linq")
+{
+    <section class="scene">
+        <div class="pane">
+            <h2>The query</h2>
+            <pre class="code static">var query = source
+    .Where(IsEven)
+    .Select(Square);
+
+foreach (var value in query) { ... }
+var count = query.Count();</pre>
+            <div class="actions">
+                <button class="btn primary" @onclick="RunLinq">Run with tracing</button>
+            </div>
+            <p class="muted">The source sequence logs every yield, so the trace shows who pulled the values and when.</p>
+        </div>
+
+        <div class="pane">
+            <h2>What actually ran</h2>
+            @if (_trace is null)
+            {
+                <p class="muted">Run the query to see the order of operations.</p>
+            }
+            else
+            {
+                <ol class="trace">
+                    @foreach (var line in _trace)
+                    {
+                        <li class="kind-@line.Kind.ToString().ToLowerInvariant()">
+                            <span class="step">@line.Step</span>@line.Text
+                        </li>
+                    }
+                </ol>
+                <p>
+                    Building the query allocated an iterator but read nothing: <code>Where</code> and <code>Select</code>
+                    are lazy. Every <code>foreach</code> calls <code>GetEnumerator</code> and starts again from the
+                    beginning, which is why <code>Count()</code> re-ran the whole thing. If the source were a database
+                    query, that would be two round trips.
+                </p>
+            }
+        </div>
+    </section>
+}
+else
+{
+    <section class="scene">
+        <div class="pane">
+            <h2>The workloads</h2>
+            <pre class="code static">text += "x"          // new string each time
+builder.Append('x')  // one growing buffer
+object[] boxes       // a box per value type
+List&lt;int&gt; growth     // doubling and copying</pre>
+            <div class="actions">
+                <button class="btn primary" @onclick="RunAllocations">Measure</button>
+            </div>
+            <p class="muted">Measured with the runtime's own allocation counter, not estimated.</p>
+        </div>
+
+        <div class="pane">
+            <h2>Allocated, in bytes</h2>
+            @if (_allocations is null)
+            {
+                <p class="muted">Measure to see the numbers.</p>
+            }
+            else
+            {
+                <table class="grid">
+                    <thead>
+                        <tr><th>workload</th><th>bytes</th><th>note</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var result in _allocations)
+                        {
+                            <tr>
+                                <td>@result.Name</td>
+                                <td class="number">@result.Bytes.ToString("N0")</td>
+                                <td>@result.Note</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+
+                @if (_allocations.Sum(a => a.Bytes) <= 0)
+                {
+                    <p class="error">
+                        This runtime reports zero, so there is nothing to compare. The scene stays honest rather than
+                        showing invented numbers.
+                    </p>
+                }
+                else
+                {
+                    <p>
+                        The counter measures managed allocations on the current thread, so it excludes anything the
+                        runtime did before the first call. The ratios are the lesson: string concatenation allocates
+                        the accumulated text on every iteration, while the builder grows a buffer and copies it a
+                        handful of times.
+                    </p>
+                }
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private const string DefaultSource = @"public async Task<int> LoadScoreAsync()
+{
+    await Task.Delay(100);
+    var value = await Task.FromResult(42);
+    return value;
+}";
+
+    private string _tab = "async";
+    private string _source = DefaultSource;
+    private AsyncInspection? _inspection;
+    private IReadOnlyList<TraceLine>? _trace;
+    private IReadOnlyList<AllocationResult>? _allocations;
+    private bool _busy;
+    private bool _loaded;
+
+    private string Active(string tab) => tab == _tab ? "tab active" : "tab";
+
+    private void Select(string tab)
+    {
+        _tab = tab;
+        if (tab == "linq" && _trace is null) _trace = LinqLab.Run();
+        if (tab == "alloc" && _allocations is null) _allocations = AllocationLab.Run();
+    }
+
+    private async Task RunAsyncScene()
+    {
+        _busy = true;
+        StateHasChanged();
+        await Task.Yield();
+
+        try
+        {
+            _inspection = AsyncInspector.Inspect(_source);
+        }
+        catch (Exception error)
+        {
+            _inspection = new AsyncInspection(false, new[] { error.Message }, null, null, false,
+                Array.Empty<StateMachineField>(), Array.Empty<StateMachineMethod>(),
+                Array.Empty<string>(), 0, Array.Empty<string>(), Array.Empty<string>());
+        }
+
+        _busy = false;
+    }
+
+    private void ResetSource() => _source = DefaultSource;
+
+    private void RunLinq() => _trace = LinqLab.Run();
+
+    private void RunAllocations() => _allocations = AllocationLab.Run();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _loaded) return;
+        _loaded = true;
+        await Task.Delay(50);
+        await RunAsyncScene();
+        StateHasChanged();
+    }
+}
