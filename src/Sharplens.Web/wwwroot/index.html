@@ -3,7 +3,19 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <base href="/" />
+    <!-- Work out the base from the folder the page is served from, so the same
+         build works at localhost:5000/ and at tamiloreo.github.io/sharplens/. -->
+    <script>
+        (function () {
+            var path = window.location.pathname;
+            var base = path.charAt(path.length - 1) === "/"
+                ? path
+                : path.replace(/[^/]*$/, "");
+            var tag = document.createElement("base");
+            tag.href = base;
+            document.head.appendChild(tag);
+        })();
+    </script>
     <title>sharplens</title>
     <meta name="description" content="See what the C# compiler and the CLR actually do underneath your code." />
     <link rel="stylesheet" href="css/app.css" />
