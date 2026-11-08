@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Work out the base from the folder the page is served from, so the same
+         build works at localhost:5000/ and at tamiloreo.github.io/sharplens/. -->
+    <script>
+        (function () {
+            var path = window.location.pathname;
+            var base = path.charAt(path.length - 1) === "/"
+                ? path
+                : path.replace(/[^/]*$/, "");
+            var tag = document.createElement("base");
+            tag.href = base;
+            document.head.appendChild(tag);
+        })();
+    </script>
+    <title>sharplens</title>
+    <meta name="description" content="See what the C# compiler and the CLR actually do underneath your code." />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+</head>
+<body>
+    <div id="app">
+        <div class="boot">
+            <p class="boot-title">sharplens</p>
+            <p class="boot-text">Loading the Roslyn compiler. It runs on your machine, so the first visit downloads it once.</p>
+        </div>
+    </div>
+
+    <div id="blazor-error-ui">
+        Something broke while running the compiler in this browser.
+        <a href="" class="reload">Reload</a>
+    </div>
+
+    <script src="_framework/blazor.webassembly.js"></script>
+</body>
+</html>
