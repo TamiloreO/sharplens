@@ -29,6 +29,10 @@ The numbers in the last scene are real, taken in the browser:
 | boxing 10,000 ints | 200,016 |
 | `List<int>` grown to 10,000 | 131,288 |
 
+## How it looks
+
+The page uses the swiss skin from [style-labs](https://tamiloreo.github.io/style-labs/?s=swiss): a fixed grid, hairline rules, one red, and type doing the hierarchy, so a dense field table stays readable next to code.
+
 ## How it works
 
 The site is Blazor WebAssembly, so there is no server and nothing to secure. Three pieces make it work:
